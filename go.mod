@@ -1,4 +1,4 @@
-module github.com/kidandcat/link
+module github.com/kidandcat/online
 
 go 1.21
 

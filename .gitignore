@@ -18,9 +18,9 @@ go.work
 vendor/
 
 # Build output
-link
-/link
-/cmd/link/link
+online
+/online
+/cmd/online/online
 
 # IDE files
 .idea/

@@ -1,6 +1,6 @@
-# Link
+# Online
 
-Your own secure tunnel service running on Fly.io. Link allows you to:
+Your own secure tunnel service running on Fly.io. Online allows you to:
 - Expose local ports through secure HTTPS tunnels
 - Temporarily serve static files and folders
 - All with automatic SSL/TLS from Fly.io
@@ -27,7 +27,7 @@ fly auth login
 
 3. Create a new Fly app:
 ```bash
-cd link
+cd online
 fly launch
 ```
 
@@ -42,13 +42,13 @@ fly deploy
 
 Install the CLI client:
 ```bash
-go install github.com/kidandcat/link/cmd/link@latest
+go install github.com/kidandcat/online/cmd/online@latest
 ```
 
 Or build from source:
 ```bash
-cd link
-go build -o link ./cmd/link
+cd online
+go build -o online ./cmd/online
 ```
 
 ## Usage
@@ -57,32 +57,32 @@ go build -o link ./cmd/link
 
 Expose port 3000:
 ```bash
-link expose 3000 --server https://your-app.fly.dev
+online expose 3000 --server https://your-app.fly.dev
 ```
 
 With custom subdomain:
 ```bash
-link expose 3000 --subdomain myapp --server https://your-app.fly.dev
+online expose 3000 --subdomain myapp --server https://your-app.fly.dev
 ```
 
 ### Serve Static Files
 
 Serve a directory:
 ```bash
-link serve ./dist --server https://your-app.fly.dev
+online serve ./dist --server https://your-app.fly.dev
 ```
 
 Serve a single file:
 ```bash
-link serve ./index.html --server https://your-app.fly.dev
+online serve ./index.html --server https://your-app.fly.dev
 ```
 
 ### Configuration
 
 Set the server URL as an environment variable to avoid typing it each time:
 ```bash
-export LINK_SERVER="https://your-app.fly.dev"
-link expose 3000
+export ONLINE_SERVER="https://your-app.fly.dev"
+online expose 3000
 ```
 
 ## How It Works
@@ -125,7 +125,7 @@ link expose 3000
 
 ### Project Structure
 ```
-link/
+online/
 ├── main.go                 # Server entry point
 ├── server/
 │   ├── tunnel.go          # Tunnel management
@@ -134,7 +134,7 @@ link/
 │   ├── client.go          # Client library
 │   └── static.go          # Static file upload
 ├── cmd/
-│   └── link/
+│   └── online/
 │       └── main.go        # CLI client
 ├── fly.toml               # Fly.io configuration
 ├── Dockerfile             # Container image
@@ -150,7 +150,7 @@ go run main.go
 
 Client (connecting to local server):
 ```bash
-go run ./cmd/link expose 3000 --server http://localhost:8080
+go run ./cmd/online expose 3000 --server http://localhost:8080
 ```
 
 ## License

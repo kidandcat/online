@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kidandcat/link/server"
+	"github.com/kidandcat/online/server"
 )
 
 func main() {
@@ -84,7 +84,7 @@ func main() {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Link</title>
+    <title>Online</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
@@ -92,7 +92,7 @@ func main() {
     </style>
 </head>
 <body>
-    <h1>Link</h1>
+    <h1>Online</h1>
     <p>Your own secure tunnel service running on Fly.io</p>
     
     <div class="section">
@@ -108,13 +108,13 @@ func main() {
     <div class="section">
         <h2>Quick Start</h2>
         <h3>1. Install the client</h3>
-        <pre>go install github.com/kidandcat/link/cmd/link@latest</pre>
+        <pre>go install github.com/kidandcat/online/cmd/online@latest</pre>
         
         <h3>2. Expose a local port</h3>
-        <pre>link expose 3000</pre>
+        <pre>online expose 3000</pre>
         
         <h3>3. Serve static files</h3>
-        <pre>link serve ./my-folder</pre>
+        <pre>online serve ./my-folder</pre>
     </div>
     
     <div class="section">
