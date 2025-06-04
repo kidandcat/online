@@ -27,6 +27,7 @@ type Tunnel struct {
 	responses map[string]chan *TunnelResponse
 	created   time.Time
 	mu        sync.Mutex
+	done      chan struct{}
 }
 
 type TunnelRequest struct {
@@ -89,6 +90,7 @@ func (tm *TunnelManager) CreateTunnel(conn *websocket.Conn) (*Tunnel, error) {
 		requests:  make(chan *TunnelRequest, 100),
 		responses: make(map[string]chan *TunnelResponse),
 		created:   time.Now(),
+		done:      make(chan struct{}),
 	}
 	
 	tm.activeTunnel = tunnel
@@ -129,6 +131,8 @@ func (t *Tunnel) handleMessages() {
 			close(ch)
 		}
 		t.mu.Unlock()
+		// Signal that the tunnel is done
+		close(t.done)
 	}()
 	
 	for {
@@ -252,6 +256,10 @@ func (t *Tunnel) Close() {
 	if t.conn != nil {
 		t.conn.Close()
 	}
+}
+
+func (t *Tunnel) Done() <-chan struct{} {
+	return t.done
 }
 
 // getCorrectContentType checks if the Content-Type needs correction based on file extension

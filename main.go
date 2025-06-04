@@ -40,8 +40,8 @@ func main() {
 			"url": fmt.Sprintf("%s://%s", proto, r.Host),
 		})
 
-		// Keep connection alive
-		<-r.Context().Done()
+		// Wait for tunnel to close (client disconnect)
+		<-tunnel.Done()
 		tunnelManager.RemoveTunnel()
 	})
 
