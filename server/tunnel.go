@@ -23,6 +23,7 @@ type Tunnel struct {
 	Path      string
 	conn      *websocket.Conn
 	requests  chan *TunnelRequest
+	responses map[string]chan *TunnelResponse
 	created   time.Time
 	mu        sync.Mutex
 }
@@ -92,6 +93,7 @@ func (tm *TunnelManager) CreateTunnel(conn *websocket.Conn) (*Tunnel, error) {
 		Path:      path,
 		conn:      conn,
 		requests:  make(chan *TunnelRequest, 100),
+		responses: make(map[string]chan *TunnelResponse),
 		created:   time.Now(),
 	}
 	
@@ -124,6 +126,12 @@ func (tm *TunnelManager) RemoveTunnel(path string) {
 func (t *Tunnel) handleMessages() {
 	defer func() {
 		close(t.requests)
+		// Clean up response channels
+		t.mu.Lock()
+		for _, ch := range t.responses {
+			close(ch)
+		}
+		t.mu.Unlock()
 	}()
 	
 	for {
@@ -136,8 +144,26 @@ func (t *Tunnel) handleMessages() {
 			break
 		}
 		
-		// Handle response (this would be matched with pending requests)
-		log.Printf("Received response for request %s", resp.ID)
+		// Find the response channel for this request
+		t.mu.Lock()
+		ch, exists := t.responses[resp.ID]
+		if exists {
+			delete(t.responses, resp.ID)
+		}
+		t.mu.Unlock()
+		
+		if exists {
+			// Send response to waiting handler
+			select {
+			case ch <- &resp:
+				log.Printf("Delivered response for request %s", resp.ID)
+			default:
+				log.Printf("Failed to deliver response for request %s (channel blocked)", resp.ID)
+			}
+			close(ch)
+		} else {
+			log.Printf("Received response for unknown request %s", resp.ID)
+		}
 	}
 }
 
@@ -150,6 +176,19 @@ func (t *Tunnel) ForwardRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read request body", http.StatusBadGateway)
 		return
 	}
+	
+	// Create response channel
+	respChan := make(chan *TunnelResponse, 1)
+	t.mu.Lock()
+	t.responses[reqID] = respChan
+	t.mu.Unlock()
+	
+	// Clean up channel on exit
+	defer func() {
+		t.mu.Lock()
+		delete(t.responses, reqID)
+		t.mu.Unlock()
+	}()
 	
 	// Create tunnel request
 	tunnelReq := &TunnelRequest{
@@ -178,9 +217,26 @@ func (t *Tunnel) ForwardRequest(w http.ResponseWriter, r *http.Request) {
 	case <-ctx.Done():
 		http.Error(w, "Request timeout", http.StatusGatewayTimeout)
 		return
-	case <-time.After(30 * time.Second):
-		http.Error(w, "Request timeout", http.StatusGatewayTimeout)
-		return
+	case resp := <-respChan:
+		if resp == nil {
+			http.Error(w, "Connection closed", http.StatusBadGateway)
+			return
+		}
+		
+		// Write response headers
+		for k, v := range resp.Headers {
+			for _, vv := range v {
+				w.Header().Add(k, vv)
+			}
+		}
+		
+		// Write status code
+		w.WriteHeader(resp.StatusCode)
+		
+		// Write response body
+		if _, err := w.Write(resp.Body); err != nil {
+			log.Printf("Failed to write response body: %v", err)
+		}
 	}
 }
 

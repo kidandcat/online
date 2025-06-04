@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -94,10 +95,22 @@ func (c *Client) handleRequest(req TunnelRequest, port int) {
 		return
 	}
 
-	// Copy headers
-	for k, v := range req.Headers {
-		httpReq.Header[k] = v
+	// Copy headers, but skip SSL-related ones to avoid confusing local servers
+	skipHeaders := map[string]bool{
+		"x-forwarded-proto": true,
+		"x-forwarded-ssl":   true,
+		"x-forwarded-port":  true,
+		"x-forwarded-for":   true,
 	}
+	
+	for k, v := range req.Headers {
+		if !skipHeaders[strings.ToLower(k)] {
+			httpReq.Header[k] = v
+		}
+	}
+	
+	// Set explicit HTTP protocol header for local connection
+	httpReq.Header.Set("X-Forwarded-Proto", "http")
 
 	// Make request to local server
 	client := &http.Client{
