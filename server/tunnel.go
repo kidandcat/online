@@ -20,7 +20,7 @@ type TunnelManager struct {
 
 type Tunnel struct {
 	ID        string
-	Subdomain string
+	Path      string
 	conn      *websocket.Conn
 	requests  chan *TunnelRequest
 	created   time.Time
@@ -65,38 +65,37 @@ func (tm *TunnelManager) cleanupExpiredTunnels() {
 	
 	for range ticker.C {
 		tm.mu.Lock()
-		for subdomain, tunnel := range tm.tunnels {
+		for path, tunnel := range tm.tunnels {
 			if time.Since(tunnel.created) > 24*time.Hour {
 				tunnel.Close()
-				delete(tm.tunnels, subdomain)
-				log.Printf("Cleaned up expired tunnel: %s", subdomain)
+				delete(tm.tunnels, path)
+				log.Printf("Cleaned up expired tunnel: %s", path)
 			}
 		}
 		tm.mu.Unlock()
 	}
 }
 
-func (tm *TunnelManager) CreateTunnel(subdomain string, conn *websocket.Conn) (*Tunnel, error) {
+func (tm *TunnelManager) CreateTunnel(conn *websocket.Conn) (*Tunnel, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	
-	if subdomain == "" {
-		subdomain = generateSubdomain()
-	}
+	// Generate a unique path identifier
+	path := generateTunnelPath()
 	
-	if _, exists := tm.tunnels[subdomain]; exists {
-		return nil, fmt.Errorf("subdomain %s already in use", subdomain)
+	if _, exists := tm.tunnels[path]; exists {
+		return nil, fmt.Errorf("tunnel path %s already in use", path)
 	}
 	
 	tunnel := &Tunnel{
 		ID:        uuid.New().String(),
-		Subdomain: subdomain,
+		Path:      path,
 		conn:      conn,
 		requests:  make(chan *TunnelRequest, 100),
 		created:   time.Now(),
 	}
 	
-	tm.tunnels[subdomain] = tunnel
+	tm.tunnels[path] = tunnel
 	
 	// Start handling tunnel messages
 	go tunnel.handleMessages()
@@ -104,21 +103,21 @@ func (tm *TunnelManager) CreateTunnel(subdomain string, conn *websocket.Conn) (*
 	return tunnel, nil
 }
 
-func (tm *TunnelManager) GetTunnel(subdomain string) (*Tunnel, bool) {
+func (tm *TunnelManager) GetTunnel(path string) (*Tunnel, bool) {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
 	
-	tunnel, exists := tm.tunnels[subdomain]
+	tunnel, exists := tm.tunnels[path]
 	return tunnel, exists
 }
 
-func (tm *TunnelManager) RemoveTunnel(subdomain string) {
+func (tm *TunnelManager) RemoveTunnel(path string) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	
-	if tunnel, exists := tm.tunnels[subdomain]; exists {
+	if tunnel, exists := tm.tunnels[path]; exists {
 		tunnel.Close()
-		delete(tm.tunnels, subdomain)
+		delete(tm.tunnels, path)
 	}
 }
 
@@ -132,7 +131,7 @@ func (t *Tunnel) handleMessages() {
 		err := t.conn.ReadJSON(&resp)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Tunnel %s disconnected: %v", t.Subdomain, err)
+				log.Printf("Tunnel %s disconnected: %v", t.Path, err)
 			}
 			break
 		}
@@ -194,6 +193,6 @@ func (t *Tunnel) Close() {
 	}
 }
 
-func generateSubdomain() string {
-	return uuid.New().String()[:8]
+func generateTunnelPath() string {
+	return "tunnel/" + uuid.New().String()[:8]
 }

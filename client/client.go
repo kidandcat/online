@@ -18,10 +18,10 @@ type Client struct {
 }
 
 type TunnelInfo struct {
-	ID        string `json:"id"`
-	Subdomain string `json:"subdomain"`
-	URL       string `json:"url"`
-	Error     string `json:"error,omitempty"`
+	ID    string `json:"id"`
+	Path  string `json:"path"`
+	URL   string `json:"url"`
+	Error string `json:"error,omitempty"`
 }
 
 type TunnelRequest struct {
@@ -45,8 +45,8 @@ func NewClient(serverURL string) *Client {
 	}
 }
 
-func (c *Client) ExposePort(port int, subdomain string) error {
-	wsURL := c.getWebSocketURL(subdomain)
+func (c *Client) ExposePort(port int) error {
+	wsURL := c.getWebSocketURL()
 
 	dialer := websocket.DefaultDialer
 	conn, _, err := dialer.Dial(wsURL, nil)
@@ -146,7 +146,7 @@ func (c *Client) sendErrorResponse(reqID string, statusCode int, message string)
 	}
 }
 
-func (c *Client) getWebSocketURL(subdomain string) string {
+func (c *Client) getWebSocketURL() string {
 	u, _ := url.Parse(c.serverURL)
 
 	// Convert HTTP(S) to WS(S)
@@ -160,12 +160,6 @@ func (c *Client) getWebSocketURL(subdomain string) string {
 	}
 
 	u.Path = "/ws/tunnel"
-	if subdomain != "" {
-		q := u.Query()
-		q.Set("subdomain", subdomain)
-		u.RawQuery = q.Encode()
-	}
-
 	return u.String()
 }
 

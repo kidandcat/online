@@ -16,8 +16,6 @@ func main() {
 
 	// WebSocket endpoint for tunnel connections
 	http.HandleFunc("/ws/tunnel", func(w http.ResponseWriter, r *http.Request) {
-		subdomain := r.URL.Query().Get("subdomain")
-
 		conn, err := server.Upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("Failed to upgrade connection: %v", err)
@@ -25,22 +23,26 @@ func main() {
 		}
 		defer conn.Close()
 
-		tunnel, err := tunnelManager.CreateTunnel(subdomain, conn)
+		tunnel, err := tunnelManager.CreateTunnel(conn)
 		if err != nil {
 			conn.WriteJSON(map[string]string{"error": err.Error()})
 			return
 		}
 
 		// Send tunnel info to client
+		proto := "https"
+		if r.TLS == nil {
+			proto = "http"
+		}
 		conn.WriteJSON(map[string]string{
-			"id":        tunnel.ID,
-			"subdomain": tunnel.Subdomain,
-			"url":       fmt.Sprintf("https://%s.%s", tunnel.Subdomain, r.Host),
+			"id":   tunnel.ID,
+			"path": tunnel.Path,
+			"url":  fmt.Sprintf("%s://%s/%s", proto, r.Host, tunnel.Path),
 		})
 
 		// Keep connection alive
 		<-r.Context().Done()
-		tunnelManager.RemoveTunnel(tunnel.Subdomain)
+		tunnelManager.RemoveTunnel(tunnel.Path)
 	})
 
 	// Static file upload endpoint
@@ -54,27 +56,36 @@ func main() {
 
 	// Main request handler
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		host := r.Host
-
-		// Handle static file serving
-		if strings.HasPrefix(r.URL.Path, "/") && len(r.URL.Path) > 1 {
-			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-			if len(parts) > 0 {
-				storeID := parts[0]
-				if store, exists := staticManager.GetStore(storeID); exists {
-					store.ServeHTTP(w, r)
+		// Handle tunnel requests first
+		if strings.HasPrefix(r.URL.Path, "/tunnel/") {
+			tunnelPath := strings.TrimPrefix(r.URL.Path, "/")
+			parts := strings.SplitN(tunnelPath, "/", 3)
+			if len(parts) >= 2 {
+				// Extract tunnel ID from path: /tunnel/abc123/...
+				tunnelID := parts[0] + "/" + parts[1]
+				tunnel, exists := tunnelManager.GetTunnel(tunnelID)
+				if exists {
+					// Update the request path to remove the tunnel prefix
+					if len(parts) == 3 {
+						r.URL.Path = "/" + parts[2]
+					} else {
+						r.URL.Path = "/"
+					}
+					tunnel.ForwardRequest(w, r)
 					return
 				}
 			}
 		}
 
-		// Handle tunnel requests
-		subdomain := extractSubdomain(host)
-		if subdomain != "" {
-			tunnel, exists := tunnelManager.GetTunnel(subdomain)
-			if exists {
-				tunnel.ForwardRequest(w, r)
-				return
+		// Handle static file serving
+		if strings.HasPrefix(r.URL.Path, "/") && len(r.URL.Path) > 1 {
+			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+			if len(parts) > 0 && !strings.HasPrefix(parts[0], "tunnel") {
+				storeID := parts[0]
+				if store, exists := staticManager.GetStore(storeID); exists {
+					store.ServeHTTP(w, r)
+					return
+				}
 			}
 		}
 
@@ -98,10 +109,11 @@ func main() {
     <div class="section">
         <h2>Features</h2>
         <ul>
-            <li>Expose local ports through secure tunnels</li>
+            <li>Expose local ports through secure tunnels (path-based routing)</li>
             <li>Serve static files temporarily</li>
             <li>Automatic HTTPS with Fly.io</li>
             <li>24-hour tunnel/file expiration</li>
+            <li>Single instance deployment - no subdomain configuration needed</li>
         </ul>
     </div>
     
@@ -141,10 +153,3 @@ func main() {
 	}
 }
 
-func extractSubdomain(host string) string {
-	parts := strings.Split(host, ".")
-	if len(parts) > 2 {
-		return parts[0]
-	}
-	return ""
-}

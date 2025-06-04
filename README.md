@@ -9,9 +9,10 @@ Your own secure tunnel service running on Fly.io. Online allows you to:
 
 - **Port Tunneling**: Expose any local port to the internet with a secure HTTPS URL
 - **Static File Serving**: Upload and serve static files/folders temporarily (24-hour expiration)
-- **Custom Subdomains**: Use custom subdomains for your tunnels
+- **Path-based Routing**: Uses paths instead of subdomains (no subdomain configuration needed)
 - **WebSocket-based**: Efficient bidirectional communication
 - **Automatic HTTPS**: All tunnels and static content served over HTTPS
+- **Single Instance**: Designed for single Fly.io instance deployment
 
 ## Deployment to Fly.io
 
@@ -60,9 +61,9 @@ Expose port 3000:
 online expose 3000 --server https://your-app.fly.dev
 ```
 
-With custom subdomain:
-```bash
-online expose 3000 --subdomain myapp --server https://your-app.fly.dev
+This will create a tunnel accessible at a URL like:
+```
+https://your-app.fly.dev/tunnel/abc123/
 ```
 
 ### Serve Static Files
@@ -89,8 +90,8 @@ online expose 3000
 
 ### Port Tunneling
 1. Client connects to server via WebSocket
-2. Server assigns a subdomain (e.g., `abc123.your-app.fly.dev`)
-3. HTTP requests to the subdomain are forwarded through the WebSocket to your local port
+2. Server assigns a unique path (e.g., `/tunnel/abc123`)
+3. HTTP requests to `https://your-app.fly.dev/tunnel/abc123/*` are forwarded through the WebSocket to your local port
 4. Responses are sent back through the same connection
 
 ### Static File Serving
@@ -120,6 +121,7 @@ online expose 3000
 - Static files expire after 24 hours
 - No authentication implemented (add as needed)
 - Consider adding rate limiting for production use
+- Path-based routing eliminates need for wildcard DNS/subdomain configuration
 
 ## Development
 
