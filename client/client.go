@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -16,6 +17,7 @@ import (
 type Client struct {
 	serverURL string
 	conn      *websocket.Conn
+	mu        sync.Mutex
 }
 
 type TunnelInfo struct {
@@ -140,7 +142,10 @@ func (c *Client) handleRequest(req TunnelRequest, port int) {
 		Body:       body,
 	}
 
-	if err := c.conn.WriteJSON(tunnelResp); err != nil {
+	c.mu.Lock()
+	err = c.conn.WriteJSON(tunnelResp)
+	c.mu.Unlock()
+	if err != nil {
 		log.Printf("Failed to send response: %v", err)
 	}
 }
@@ -153,7 +158,10 @@ func (c *Client) sendErrorResponse(reqID string, statusCode int, message string)
 		Body:       []byte(message),
 	}
 
-	if err := c.conn.WriteJSON(resp); err != nil {
+	c.mu.Lock()
+	err := c.conn.WriteJSON(resp)
+	c.mu.Unlock()
+	if err != nil {
 		log.Printf("Failed to send error response: %v", err)
 	}
 }
