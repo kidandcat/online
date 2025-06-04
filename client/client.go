@@ -20,7 +20,6 @@ type Client struct {
 
 type TunnelInfo struct {
 	ID    string `json:"id"`
-	Path  string `json:"path"`
 	URL   string `json:"url"`
 	Error string `json:"error,omitempty"`
 }

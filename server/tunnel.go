@@ -6,6 +6,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,13 +16,12 @@ import (
 )
 
 type TunnelManager struct {
-	tunnels map[string]*Tunnel
-	mu      sync.RWMutex
+	activeTunnel *Tunnel
+	mu           sync.RWMutex
 }
 
 type Tunnel struct {
 	ID        string
-	Path      string
 	conn      *websocket.Conn
 	requests  chan *TunnelRequest
 	responses map[string]chan *TunnelResponse
@@ -50,28 +51,24 @@ var Upgrader = websocket.Upgrader{
 }
 
 func NewTunnelManager() *TunnelManager {
-	tm := &TunnelManager{
-		tunnels: make(map[string]*Tunnel),
-	}
+	tm := &TunnelManager{}
 	
-	// Clean up expired tunnels periodically
-	go tm.cleanupExpiredTunnels()
+	// Clean up expired tunnel periodically
+	go tm.cleanupExpiredTunnel()
 	
 	return tm
 }
 
-func (tm *TunnelManager) cleanupExpiredTunnels() {
+func (tm *TunnelManager) cleanupExpiredTunnel() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	
 	for range ticker.C {
 		tm.mu.Lock()
-		for path, tunnel := range tm.tunnels {
-			if time.Since(tunnel.created) > 24*time.Hour {
-				tunnel.Close()
-				delete(tm.tunnels, path)
-				log.Printf("Cleaned up expired tunnel: %s", path)
-			}
+		if tm.activeTunnel != nil && time.Since(tm.activeTunnel.created) > 24*time.Hour {
+			tm.activeTunnel.Close()
+			tm.activeTunnel = nil
+			log.Printf("Cleaned up expired tunnel")
 		}
 		tm.mu.Unlock()
 	}
@@ -81,23 +78,20 @@ func (tm *TunnelManager) CreateTunnel(conn *websocket.Conn) (*Tunnel, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	
-	// Generate a unique path identifier
-	path := generateTunnelPath()
-	
-	if _, exists := tm.tunnels[path]; exists {
-		return nil, fmt.Errorf("tunnel path %s already in use", path)
+	// Only allow one active tunnel
+	if tm.activeTunnel != nil {
+		return nil, fmt.Errorf("a tunnel is already active")
 	}
 	
 	tunnel := &Tunnel{
 		ID:        uuid.New().String(),
-		Path:      path,
 		conn:      conn,
 		requests:  make(chan *TunnelRequest, 100),
 		responses: make(map[string]chan *TunnelResponse),
 		created:   time.Now(),
 	}
 	
-	tm.tunnels[path] = tunnel
+	tm.activeTunnel = tunnel
 	
 	// Start handling tunnel messages
 	go tunnel.handleMessages()
@@ -105,21 +99,24 @@ func (tm *TunnelManager) CreateTunnel(conn *websocket.Conn) (*Tunnel, error) {
 	return tunnel, nil
 }
 
-func (tm *TunnelManager) GetTunnel(path string) (*Tunnel, bool) {
+func (tm *TunnelManager) GetActiveTunnel() (*Tunnel, bool) {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
 	
-	tunnel, exists := tm.tunnels[path]
-	return tunnel, exists
+	if tm.activeTunnel != nil {
+		return tm.activeTunnel, true
+	}
+	return nil, false
 }
 
-func (tm *TunnelManager) RemoveTunnel(path string) {
+
+func (tm *TunnelManager) RemoveTunnel() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	
-	if tunnel, exists := tm.tunnels[path]; exists {
-		tunnel.Close()
-		delete(tm.tunnels, path)
+	if tm.activeTunnel != nil {
+		tm.activeTunnel.Close()
+		tm.activeTunnel = nil
 	}
 }
 
@@ -139,7 +136,7 @@ func (t *Tunnel) handleMessages() {
 		err := t.conn.ReadJSON(&resp)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Tunnel %s disconnected: %v", t.Path, err)
+				log.Printf("Tunnel disconnected: %v", err)
 			}
 			break
 		}
@@ -225,6 +222,14 @@ func (t *Tunnel) ForwardRequest(w http.ResponseWriter, r *http.Request) {
 		
 		// Write response headers
 		for k, v := range resp.Headers {
+			// Special handling for Content-Type to ensure proper MIME types
+			if strings.ToLower(k) == "content-type" {
+				// Check if we need to correct the MIME type based on the path
+				if correctedType := getCorrectContentType(r.URL.Path, v); correctedType != "" {
+					w.Header().Set("Content-Type", correctedType)
+					continue
+				}
+			}
 			for _, vv := range v {
 				w.Header().Add(k, vv)
 			}
@@ -249,6 +254,43 @@ func (t *Tunnel) Close() {
 	}
 }
 
-func generateTunnelPath() string {
-	return "tunnel/" + uuid.New().String()[:8]
+// getCorrectContentType checks if the Content-Type needs correction based on file extension
+func getCorrectContentType(path string, currentTypes []string) string {
+	// Get the file extension
+	ext := strings.ToLower(filepath.Ext(path))
+	
+	// Map of extensions to correct MIME types
+	correctTypes := map[string]string{
+		".css":  "text/css",
+		".js":   "application/javascript",
+		".json": "application/json",
+		".html": "text/html",
+		".htm":  "text/html",
+		".xml":  "application/xml",
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".gif":  "image/gif",
+		".svg":  "image/svg+xml",
+		".ico":  "image/x-icon",
+		".woff": "font/woff",
+		".woff2": "font/woff2",
+		".ttf":  "font/ttf",
+		".otf":  "font/otf",
+	}
+	
+	// Check if we have a known extension
+	if correctType, ok := correctTypes[ext]; ok {
+		// Check if the current type is incorrect
+		if len(currentTypes) > 0 {
+			currentType := strings.ToLower(currentTypes[0])
+			// If it's text/plain or application/octet-stream for a known type, correct it
+			if currentType == "text/plain" || currentType == "application/octet-stream" {
+				return correctType
+			}
+		}
+	}
+	
+	return ""
 }
+

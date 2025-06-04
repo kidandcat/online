@@ -34,15 +34,15 @@ func main() {
 		if r.TLS == nil {
 			proto = "http"
 		}
+		
 		conn.WriteJSON(map[string]string{
-			"id":   tunnel.ID,
-			"path": tunnel.Path,
-			"url":  fmt.Sprintf("%s://%s/%s", proto, r.Host, tunnel.Path),
+			"id":  tunnel.ID,
+			"url": fmt.Sprintf("%s://%s", proto, r.Host),
 		})
 
 		// Keep connection alive
 		<-r.Context().Done()
-		tunnelManager.RemoveTunnel(tunnel.Path)
+		tunnelManager.RemoveTunnel()
 	})
 
 	// Static file upload endpoint
@@ -56,31 +56,23 @@ func main() {
 
 	// Main request handler
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Handle tunnel requests first
-		if strings.HasPrefix(r.URL.Path, "/tunnel/") {
-			tunnelPath := strings.TrimPrefix(r.URL.Path, "/")
-			parts := strings.SplitN(tunnelPath, "/", 3)
-			if len(parts) >= 2 {
-				// Extract tunnel ID from path: /tunnel/abc123/...
-				tunnelID := parts[0] + "/" + parts[1]
-				tunnel, exists := tunnelManager.GetTunnel(tunnelID)
-				if exists {
-					// Update the request path to remove the tunnel prefix
-					if len(parts) == 3 {
-						r.URL.Path = "/" + parts[2]
-					} else {
-						r.URL.Path = "/"
-					}
-					tunnel.ForwardRequest(w, r)
-					return
-				}
-			}
+		// Skip websocket and special endpoints
+		if r.URL.Path == "/ws/tunnel" || r.URL.Path == "/upload" || r.URL.Path == "/health" {
+			return
+		}
+		
+		// Check if there's an active tunnel
+		tunnel, exists := tunnelManager.GetActiveTunnel()
+		if exists {
+			// Forward all requests to the tunnel
+			tunnel.ForwardRequest(w, r)
+			return
 		}
 
-		// Handle static file serving
+		// Handle static file serving (only when no tunnel is active)
 		if strings.HasPrefix(r.URL.Path, "/") && len(r.URL.Path) > 1 {
 			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-			if len(parts) > 0 && !strings.HasPrefix(parts[0], "tunnel") {
+			if len(parts) > 0 {
 				storeID := parts[0]
 				if store, exists := staticManager.GetStore(storeID); exists {
 					store.ServeHTTP(w, r)
@@ -109,11 +101,12 @@ func main() {
     <div class="section">
         <h2>Features</h2>
         <ul>
-            <li>Expose local ports through secure tunnels (path-based routing)</li>
-            <li>Serve static files temporarily</li>
+            <li>Expose local ports through secure tunnels from root domain</li>
+            <li>Serve static files temporarily (when no tunnel is active)</li>
             <li>Automatic HTTPS with Fly.io</li>
             <li>24-hour tunnel/file expiration</li>
-            <li>Single instance deployment - no subdomain configuration needed</li>
+            <li>Single active tunnel at a time - takes over entire domain</li>
+            <li>Full support for applications using absolute paths</li>
         </ul>
     </div>
     
@@ -124,9 +117,11 @@ func main() {
         
         <h3>2. Expose a local port</h3>
         <pre>online expose 3000</pre>
+        <p>Note: The tunnel will take over the entire root domain. Only one tunnel can be active at a time.</p>
         
         <h3>3. Serve static files</h3>
         <pre>online serve ./my-folder</pre>
+        <p>Note: Static files can only be served when no tunnel is active.</p>
     </div>
     
     <div class="section">

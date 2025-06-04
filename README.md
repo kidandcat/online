@@ -8,11 +8,12 @@ Your own secure tunnel service running on Fly.io. Online allows you to:
 ## Features
 
 - **Port Tunneling**: Expose any local port to the internet with a secure HTTPS URL
+- **Root Domain Routing**: Tunnel takes over the entire root domain for full app compatibility
 - **Static File Serving**: Upload and serve static files/folders temporarily (24-hour expiration)
-- **Path-based Routing**: Uses paths instead of subdomains (no subdomain configuration needed)
 - **WebSocket-based**: Efficient bidirectional communication
 - **Automatic HTTPS**: All tunnels and static content served over HTTPS
-- **Single Instance**: Designed for single Fly.io instance deployment
+- **Single Active Tunnel**: Only one tunnel can be active at a time
+- **Absolute Path Support**: Apps using absolute paths work seamlessly
 
 ## Deployment to Fly.io
 
@@ -61,10 +62,12 @@ Expose port 3000:
 online expose 3000 --server https://your-app.fly.dev
 ```
 
-This will create a tunnel accessible at a URL like:
+This will create a tunnel accessible at:
 ```
-https://your-app.fly.dev/tunnel/abc123/
+https://your-app.fly.dev
 ```
+
+**Note**: The tunnel takes over the entire root domain. Only one tunnel can be active at a time.
 
 ### Serve Static Files
 
@@ -90,9 +93,10 @@ online expose 3000
 
 ### Port Tunneling
 1. Client connects to server via WebSocket
-2. Server assigns a unique path (e.g., `/tunnel/abc123`)
-3. HTTP requests to `https://your-app.fly.dev/tunnel/abc123/*` are forwarded through the WebSocket to your local port
+2. Server activates the tunnel on the root domain
+3. All HTTP requests to `https://your-app.fly.dev` are forwarded through the WebSocket to your local port
 4. Responses are sent back through the same connection
+5. Full support for applications using absolute paths
 
 ### Static File Serving
 1. Client uploads files via multipart form
@@ -121,7 +125,8 @@ online expose 3000
 - Static files expire after 24 hours
 - No authentication implemented (add as needed)
 - Consider adding rate limiting for production use
-- Path-based routing eliminates need for wildcard DNS/subdomain configuration
+- Root domain routing provides maximum compatibility with web applications
+- Only one tunnel can be active at a time for security
 
 ## Development
 
